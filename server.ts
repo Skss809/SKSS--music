@@ -346,44 +346,28 @@ Return ONLY a JSON array of objects with "title" and "artist" properties. No mar
 
       console.log(`[Local Server] Resolving YT stream URL for ID: ${videoId}, mode: ${mode}`);
 
-      console.log(`[Local Server] Fetching stream URL via Invidious API`);
       let streamUrl: string | undefined;
 
-      // 1. Try Invidious API (Vercel-friendly, fast)
       try {
-        const invidiousRes = await fetch(`https://inv.thepixora.com/api/v1/videos/${videoId}`);
-        if (invidiousRes.ok) {
-          const data = await invidiousRes.json();
-          const audioFormat = data.adaptiveFormats?.find((f: any) => f.type?.startsWith('audio'));
-          const videoFormat = data.formatStreams?.find((f: any) => f.type?.startsWith('video'));
-          
-          if (mode === 'video') {
-            streamUrl = videoFormat?.url || audioFormat?.url;
-          } else {
-            streamUrl = audioFormat?.url || videoFormat?.url;
-          }
+        const play = (await import('play-dl')).default;
+        const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        const info = await play.video_info(ytUrl);
+        
+        let format;
+        if (mode === 'video') {
+          format = info.format.find((f: any) => f.hasVideo && f.hasAudio) || info.format.find((f: any) => f.hasVideo);
+        } else {
+          format = info.format.find((f: any) => !f.hasVideo && f.hasAudio) || info.format.find((f: any) => f.hasAudio);
+        }
+
+        if (format && format.url) {
+          streamUrl = format.url;
+        } else {
+          // Fallback
+          streamUrl = info.format[0]?.url;
         }
       } catch (err: any) {
-        console.error(`[Local Server] Invidious API error:`, err.message);
-      }
-
-      // 2. Fallback to youtube-dl-exec (Local-only, fails on Vercel but bulletproof locally)
-      if (!streamUrl) {
-        try {
-          console.log(`[Local Server] Falling back to youtube-dl-exec...`);
-          const youtubedl = (await import('youtube-dl-exec')).default;
-          const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
-          const outputUrl = await youtubedl(ytUrl, {
-            getUrl: true,
-            noWarnings: true,
-            callHome: false,
-            noCheckCertificates: true,
-            format: mode === 'video' ? 'best[ext=mp4]' : 'bestaudio'
-          });
-          streamUrl = typeof outputUrl === 'string' ? outputUrl.trim().split('\n')[0] : undefined;
-        } catch (err: any) {
-          console.error(`[Local Server] yt-dlp fallback error:`, err.message);
-        }
+        console.error("[Local Server] play-dl extraction error:", err.message);
       }
 
       console.log(`[Local Server] Resolved stream URL: ${streamUrl ? streamUrl.slice(0, 50) + '...' : 'null/undefined'}`);

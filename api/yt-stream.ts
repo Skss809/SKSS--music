@@ -38,22 +38,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let streamUrl: string | undefined;
 
-    // Try Invidious API (Vercel-friendly, fast)
     try {
-      const invidiousRes = await fetch(`https://inv.thepixora.com/api/v1/videos/${videoId}`);
-      if (invidiousRes.ok) {
-        const data = await invidiousRes.json();
-        const audioFormat = data.adaptiveFormats?.find((f: any) => f.type?.startsWith('audio'));
-        const videoFormat = data.formatStreams?.find((f: any) => f.type?.startsWith('video'));
-        
-        if (mode === 'video') {
-          streamUrl = videoFormat?.url || audioFormat?.url;
-        } else {
-          streamUrl = audioFormat?.url || videoFormat?.url;
-        }
+      const play = (await import('play-dl')).default;
+      const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const info = await play.video_info(ytUrl);
+      
+      let format;
+      if (mode === 'video') {
+        format = info.format.find((f: any) => f.hasVideo && f.hasAudio) || info.format.find((f: any) => f.hasVideo);
+      } else {
+        format = info.format.find((f: any) => !f.hasVideo && f.hasAudio) || info.format.find((f: any) => f.hasAudio);
+      }
+
+      if (format && format.url) {
+        streamUrl = format.url;
+      } else {
+        // Fallback
+        streamUrl = info.format[0]?.url;
       }
     } catch (err: any) {
-      console.error(`Invidious API error:`, err.message);
+      console.error("play-dl extraction error:", err.message);
     }
 
     if (!streamUrl) {
