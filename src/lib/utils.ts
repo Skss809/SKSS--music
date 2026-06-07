@@ -24,7 +24,7 @@ export function getBackendUrl(): string {
   const origin = window.location.origin;
   const isCapacitor = window.location.protocol === 'capacitor:';
   if (isCapacitor) {
-    return 'https://skss-music-2-0-k2y8.vercel.app';
+    return 'https://skss-music-lnog.vercel.app';
   }
   return origin.includes('localhost') ? 'http://localhost:3000' : origin;
 }
