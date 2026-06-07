@@ -1,0 +1,188 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required, immutable) - User ID
+    //   - email: string (required) - User email
+    //   - displayName: string (optional) - User display name
+    //   - photoURL: string (optional) - User photo URL
+    //   - role: string (required) - User role ('admin' or 'user')
+    //
+    // Collection: playlists
+    // Document ID: {playlistId}
+    // Fields:
+    //   - userId: string (required, immutable) - Owner ID
+    //   - name: string (required) - Playlist name
+    //   - trackIds: list (required) - List of track IDs
+    //   - createdAt: string (required, immutable) - Creation timestamp (ISO 8601)
+    //
+    // Collection: trackMetadata
+    // Document ID: {trackId}
+    // Fields:
+    //   - userId: string (required, immutable) - Owner ID
+    //   - fileHash: string (required) - File hash/identifier
+    //   - title: string (required) - Track title
+    //   - artist: string (optional) - Track artist
+    //   - customImage: string (optional) - Custom image base64/URL
+    //   - duration: number (optional) - Track duration
+    //   - createdAt: string (required, immutable) - Creation timestamp (ISO 8601)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "korisohbnik16@gmail.com" && request.auth.token.email_verified == true));
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2000)) &&
+             data.role in ['admin', 'user'];
+    }
+
+    function isValidPlaylist(data) {
+      return hasOnlyAllowedFields(['userId', 'name', 'trackIds', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.trackIds is list && data.trackIds.size() <= 1000 &&
+             data.createdAt is string && isValidDateString(data.createdAt);
+    }
+
+    function isValidTrackMetadata(data) {
+      return hasOnlyAllowedFields(['userId', 'fileHash', 'title', 'artist', 'customImage', 'duration', 'source', 'streamUrl', 'createdAt', 'isVideo', 'url']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.fileHash is string && data.fileHash.size() > 0 && data.fileHash.size() < 256 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 512 &&
+             (!('artist' in data) || (data.artist is string && data.artist.size() < 512)) &&
+             (!('customImage' in data) || (data.customImage is string && data.customImage.size() < 1048576)) &&
+             (!('duration' in data) || (data.duration is number)) &&
+             (!('source' in data) || (data.source in ['youtube', 'audius', 'local', 'soundcloud'])) &&
+             (!('streamUrl' in data) || data.streamUrl == null || (data.streamUrl is string && data.streamUrl.size() < 2048)) &&
+             (!('url' in data) || data.url == null || (data.url is string && data.url.size() < 2048)) &&
+             (!('isVideo' in data) || data.isVideo is bool) &&
+             data.createdAt is string && isValidDateString(data.createdAt);
+    }
+
+    function isValidUserSettings(data) {
+      return hasOnlyAllowedFields(['userId', 'background', 'backgroundOpacity', 'blurBackground', 'updatedAt', 'liveBackground', 'previousWallpapers']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             (!('background' in data) || (data.background is string && data.background.size() < 1048576)) &&
+             (!('liveBackground' in data) || (data.liveBackground is string && data.liveBackground.size() < 2048)) &&
+             (!('previousWallpapers' in data) || (data.previousWallpapers is list && data.previousWallpapers.size() <= 6)) &&
+             (!('backgroundOpacity' in data) || (data.backgroundOpacity is number && data.backgroundOpacity >= 0 && data.backgroundOpacity <= 1)) &&
+             (!('blurBackground' in data) || data.blurBackground is bool) &&
+             data.updatedAt is string && isValidDateString(data.updatedAt);
+    }
+
+    function isValidNote(data) {
+      return hasOnlyAllowedFields(['userId', 'title', 'content', 'mood', 'createdAt', 'updatedAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 256 &&
+             data.content is string && data.content.size() <= 1048576 &&
+             (!('mood' in data) || (data.mood is string && data.mood.size() < 64)) &&
+             data.createdAt is string && isValidDateString(data.createdAt) &&
+             data.updatedAt is string && isValidDateString(data.updatedAt);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    request.resource.data.uid == userId &&
+                    ((isOwner(userId) && request.resource.data.role == 'user') || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && 
+                    request.resource.data.uid == resource.data.uid &&
+                    ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /playlists/{playlistId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && isValidPlaylist(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && isValidPlaylist(request.resource.data) && 
+                    resource.data.userId == request.auth.uid &&
+                    request.resource.data.userId == resource.data.userId &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    match /trackMetadata/{trackId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && isValidTrackMetadata(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && isValidTrackMetadata(request.resource.data) && 
+                    resource.data.userId == request.auth.uid &&
+                    request.resource.data.userId == resource.data.userId &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    match /userSettings/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUserSettings(request.resource.data) && 
+                    request.resource.data.userId == userId && isOwner(userId);
+      allow update: if isAuthenticated() && isValidUserSettings(request.resource.data) && 
+                    request.resource.data.userId == resource.data.userId && isOwner(userId);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /notes/{noteId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && isValidNote(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && isValidNote(request.resource.data) && 
+                    resource.data.userId == request.auth.uid &&
+                    request.resource.data.userId == resource.data.userId &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+  }
+}

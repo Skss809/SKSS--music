@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "267506881558",
+    "project_id": "gen-lang-client-0260580550",
+    "storage_bucket": "gen-lang-client-0260580550.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:267506881558:android:a9656cb09a033967c4d137",
+        "android_client_info": {
+          "package_name": "com.musicpwa.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "267506881558-ieta0lnn912rpo1r1v4vg1cvst7iie9l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdrwRMII1Vjlglwpam1K35usBHlzA8mlg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "267506881558-ieta0lnn912rpo1r1v4vg1cvst7iie9l.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

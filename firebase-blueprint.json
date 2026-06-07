@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User ID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Playlist": {
+      "title": "Playlist",
+      "description": "A user's playlist",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner ID" },
+        "name": { "type": "string" },
+        "trackIds": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "trackIds", "createdAt"]
+    },
+    "TrackMetadata": {
+      "title": "TrackMetadata",
+      "description": "Metadata for a local track",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner ID" },
+        "fileHash": { "type": "string", "description": "Hash or unique identifier for the local file" },
+        "title": { "type": "string" },
+        "artist": { "type": "string" },
+        "customImage": { "type": "string", "description": "Base64 or URL of custom image" },
+        "duration": { "type": "number" },
+        "source": { "type": "string", "enum": ["youtube", "audius", "local", "soundcloud"] },
+        "streamUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fileHash", "title", "createdAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User specific application settings like wallpapers",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "background": { "type": "string" },
+        "backgroundOpacity": { "type": "number" },
+        "blurBackground": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "updatedAt"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "A user's note for daily mood",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "mood": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "content", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/playlists/{playlistId}": {
+      "schema": { "$ref": "#/entities/Playlist" },
+      "description": "User playlists"
+    },
+    "/trackMetadata/{trackId}": {
+      "schema": { "$ref": "#/entities/TrackMetadata" },
+      "description": "User track metadata"
+    },
+    "/userSettings/{userId}": {
+      "schema": { "$ref": "#/entities/UserSettings" },
+      "description": "User settings like background"
+    },
+    "/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/Note" },
+      "description": "User notes and mood tracking"
+    }
+  }
+}

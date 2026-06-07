@@ -1,0 +1,10 @@
+{
+  "name": "SKSS Music",
+  "description": "A modern, AI-powered music player with local file support, smart recommendations, and Firebase integration.",
+  "requestFramePermissions": [
+    "identity-credentials-get"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

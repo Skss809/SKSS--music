@@ -1,0 +1,17 @@
+{
+  "build": {
+    "env": {
+      "YOUTUBE_DL_SKIP_PYTHON_CHECK": "1"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/__/auth/(.*)",
+      "destination": "https://gen-lang-client-0260580550.firebaseapp.com/__/auth/$1"
+    },
+    {
+      "source": "/((?!api|__).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
