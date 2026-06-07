@@ -44,7 +44,7 @@ export function PlayerBar() {
           url = createdBlobUrl;
         } else if (currentTrack.source === 'youtube') {
           const { getBackendUrl } = await import('../lib/utils');
-          url = `${getBackendUrl()}/api/yt-stream?url=${encodeURIComponent(currentTrack.id)}&mode=audio&redirect=true`;
+          url = `${getBackendUrl()}/api/yt-stream?url=${encodeURIComponent(currentTrack.id)}&mode=audio`;
         } else if (currentTrack.streamUrl) {
           if (currentTrack.source === 'soundcloud') {
             const { resolvePlayableUrl } = await import('../lib/soundcloud');

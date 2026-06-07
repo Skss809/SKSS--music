@@ -402,9 +402,76 @@ Return ONLY a JSON array of objects with "title" and "artist" properties. No mar
 
       if (redirect) {
         return res.redirect(302, streamUrl);
-      } else {
-        return res.status(200).json({ url: streamUrl });
       }
+
+      // Act as a chunked streaming proxy
+      const rangeHeader = req.headers.range;
+      let start = 0;
+      let end: number | null = null;
+
+      if (rangeHeader) {
+        const parts = rangeHeader.replace(/bytes=/, "").split("-");
+        start = parseInt(parts[0], 10);
+        if (parts[1]) {
+          end = parseInt(parts[1], 10);
+        }
+      }
+
+      // Limit chunk size to 1MB to bypass local buffer sizing and match production Vercel
+      const CHUNK_SIZE = 1024 * 1024; // 1MB
+      if (end === null || (end - start + 1) > CHUNK_SIZE) {
+        end = start + CHUNK_SIZE - 1;
+      }
+
+      const contentLength = format.content_length ? Number(format.content_length) : 0;
+      if (contentLength && end >= contentLength) {
+        end = contentLength - 1;
+      }
+
+      console.log(`[Local Server] Proxying range bytes=${start}-${end}/${contentLength || 'unknown'} for video ${videoId}`);
+
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Range': `bytes=${start}-${end}`,
+      };
+
+      const ytResponse = await fetch(streamUrl, { headers });
+
+      if (!ytResponse.ok) {
+        console.error(`[Local Server] YouTube stream fetch failed with status: ${ytResponse.status}`);
+        return res.status(ytResponse.status).json({ error: `YouTube stream server returned status ${ytResponse.status}` });
+      }
+
+      // Copy relevant headers from YouTube response
+      res.status(ytResponse.status || 206);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      const ytContentType = ytResponse.headers.get('content-type');
+      if (ytContentType) {
+        res.setHeader('Content-Type', ytContentType);
+      } else {
+        res.setHeader('Content-Type', mode === 'video' ? 'video/mp4' : 'audio/mpeg');
+      }
+
+      const ytContentRange = ytResponse.headers.get('content-range');
+      const ytContentLength = ytResponse.headers.get('content-length');
+
+      if (ytContentRange) {
+        res.setHeader('Content-Range', ytContentRange);
+      } else if (contentLength) {
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${contentLength}`);
+      }
+
+      if (ytContentLength) {
+        res.setHeader('Content-Length', ytContentLength);
+      } else {
+        res.setHeader('Content-Length', String(end - start + 1));
+      }
+
+      const arrayBuffer = await ytResponse.arrayBuffer();
+      res.write(Buffer.from(arrayBuffer));
+      res.end();
     } catch (err: any) {
       console.error("/api/yt-stream error:", err);
       if (!res.headersSent) {

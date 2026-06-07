@@ -107,7 +107,7 @@ export function GlobalPlayer() {
       };
     } else if (currentTrack.source === 'youtube') {
       import('../lib/utils').then(({ getBackendUrl }) => {
-        const url = `${getBackendUrl()}/api/yt-stream?url=${encodeURIComponent(currentTrack.id)}&mode=video&redirect=true`;
+        const url = `${getBackendUrl()}/api/yt-stream?url=${encodeURIComponent(currentTrack.id)}&mode=video`;
         setVideoUrl(url);
       });
     } else {
