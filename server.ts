@@ -346,55 +346,47 @@ Return ONLY a JSON array of objects with "title" and "artist" properties. No mar
 
       console.log(`[Local Server] Resolving YT stream URL for ID: ${videoId}, mode: ${mode}`);
 
-      const { Innertube } = await import('youtubei.js');
-      const yt = await Innertube.create({ client_type: 'ANDROID' as any });
-      console.log(`[Local Server] Innertube initialized.`);
-      
-      const info = await yt.getBasicInfo(videoId);
-      console.log(`[Local Server] Video basic info fetched.`);
+      console.log(`[Local Server] Fetching stream URL via Invidious API`);
+      let streamUrl: string | undefined;
 
-      // If it's a live stream
-      if (info.basic_info.is_live || info.streaming_data?.hls_manifest_url) {
-        const hlsUrl = info.streaming_data?.hls_manifest_url;
-        if (hlsUrl) {
-          console.log(`[Local Server] Live stream detected. HLS URL: ${hlsUrl}`);
-          if (redirect) {
-            return res.redirect(302, hlsUrl);
+      // 1. Try Invidious API (Vercel-friendly, fast)
+      try {
+        const invidiousRes = await fetch(`https://inv.thepixora.com/api/v1/videos/${videoId}`);
+        if (invidiousRes.ok) {
+          const data = await invidiousRes.json();
+          const audioFormat = data.adaptiveFormats?.find((f: any) => f.type?.startsWith('audio'));
+          const videoFormat = data.formatStreams?.find((f: any) => f.type?.startsWith('video'));
+          
+          if (mode === 'video') {
+            streamUrl = videoFormat?.url || audioFormat?.url;
           } else {
-            return res.status(200).json({ url: hlsUrl });
+            streamUrl = audioFormat?.url || videoFormat?.url;
           }
         }
+      } catch (err: any) {
+        console.error(`[Local Server] Invidious API error:`, err.message);
       }
 
-      const formats = info.streaming_data?.formats || [];
-      // Find a playable format with a URL (prefer itag 18 as it has pre-deciphered URLs on Android client)
-      let format = formats.find(f => f.itag === 18) || formats[0] || info.chooseFormat({ type: 'video+audio', quality: 'best' });
-
-      if (!format) {
-        console.log(`[Local Server] Format not found for mode: ${mode}`);
-        return res.status(404).json({ error: "No suitable stream format found" });
-      }
-
-      console.log(`[Local Server] Chosen format: ${format.mime_type}, has signature cipher? ${!!format.signature_cipher}`);
-      
-      let streamUrl = format.url;
-      if (!streamUrl && format.signature_cipher) {
-        streamUrl = await format.decipher(yt.session.player);
-      }
-
-      // Fallback: try chooseFormat in case standard combined format is missing/unusable
+      // 2. Fallback to youtube-dl-exec (Local-only, fails on Vercel but bulletproof locally)
       if (!streamUrl) {
         try {
-          const fallbackFormat = info.chooseFormat({ type: mode === 'video' ? 'video+audio' : 'audio', quality: 'best' });
-          if (fallbackFormat) {
-            streamUrl = fallbackFormat.url || (fallbackFormat.signature_cipher ? await fallbackFormat.decipher(yt.session.player) : '');
-          }
-        } catch (e: any) {
-          console.error("Fallback chooseFormat failed:", e.message);
+          console.log(`[Local Server] Falling back to youtube-dl-exec...`);
+          const youtubedl = (await import('youtube-dl-exec')).default;
+          const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+          const outputUrl = await youtubedl(ytUrl, {
+            getUrl: true,
+            noWarnings: true,
+            callHome: false,
+            noCheckCertificates: true,
+            format: mode === 'video' ? 'best[ext=mp4]' : 'bestaudio'
+          });
+          streamUrl = typeof outputUrl === 'string' ? outputUrl.trim().split('\n')[0] : undefined;
+        } catch (err: any) {
+          console.error(`[Local Server] yt-dlp fallback error:`, err.message);
         }
       }
 
-      console.log(`[Local Server] Resolved stream URL: ${streamUrl ? streamUrl.slice(0, 100) + '...' : 'null/undefined'}`);
+      console.log(`[Local Server] Resolved stream URL: ${streamUrl ? streamUrl.slice(0, 50) + '...' : 'null/undefined'}`);
 
       if (!streamUrl) {
         return res.status(404).json({ error: "Failed to decipher stream URL" });
@@ -404,74 +396,9 @@ Return ONLY a JSON array of objects with "title" and "artist" properties. No mar
         return res.redirect(302, streamUrl);
       }
 
-      // Act as a chunked streaming proxy
-      const rangeHeader = req.headers.range;
-      let start = 0;
-      let end: number | null = null;
-
-      if (rangeHeader) {
-        const parts = rangeHeader.replace(/bytes=/, "").split("-");
-        start = parseInt(parts[0], 10);
-        if (parts[1]) {
-          end = parseInt(parts[1], 10);
-        }
-      }
-
-      // Limit chunk size to 1MB to bypass local buffer sizing and match production Vercel
-      const CHUNK_SIZE = 1024 * 1024; // 1MB
-      if (end === null || (end - start + 1) > CHUNK_SIZE) {
-        end = start + CHUNK_SIZE - 1;
-      }
-
-      const contentLength = format.content_length ? Number(format.content_length) : 0;
-      if (contentLength && end >= contentLength) {
-        end = contentLength - 1;
-      }
-
-      console.log(`[Local Server] Proxying range bytes=${start}-${end}/${contentLength || 'unknown'} for video ${videoId}`);
-
-      const headers: Record<string, string> = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Range': `bytes=${start}-${end}`,
-      };
-
-      const ytResponse = await fetch(streamUrl, { headers });
-
-      if (!ytResponse.ok) {
-        console.error(`[Local Server] YouTube stream fetch failed with status: ${ytResponse.status}`);
-        return res.status(ytResponse.status).json({ error: `YouTube stream server returned status ${ytResponse.status}` });
-      }
-
-      // Copy relevant headers from YouTube response
-      res.status(ytResponse.status || 206);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-
-      const ytContentType = ytResponse.headers.get('content-type');
-      if (ytContentType) {
-        res.setHeader('Content-Type', ytContentType);
-      } else {
-        res.setHeader('Content-Type', mode === 'video' ? 'video/mp4' : 'audio/mpeg');
-      }
-
-      const ytContentRange = ytResponse.headers.get('content-range');
-      const ytContentLength = ytResponse.headers.get('content-length');
-
-      if (ytContentRange) {
-        res.setHeader('Content-Range', ytContentRange);
-      } else if (contentLength) {
-        res.setHeader('Content-Range', `bytes ${start}-${end}/${contentLength}`);
-      }
-
-      if (ytContentLength) {
-        res.setHeader('Content-Length', ytContentLength);
-      } else {
-        res.setHeader('Content-Length', String(end - start + 1));
-      }
-
-      const arrayBuffer = await ytResponse.arrayBuffer();
-      res.write(Buffer.from(arrayBuffer));
-      res.end();
+      // Always redirect to stream URL directly instead of proxying
+      // Proxying chunks using node fetch often results in 403 Forbidden
+      return res.redirect(302, streamUrl);
     } catch (err: any) {
       console.error("/api/yt-stream error:", err);
       if (!res.headersSent) {
